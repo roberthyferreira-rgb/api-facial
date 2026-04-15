@@ -4,11 +4,16 @@ FROM python:3.10-slim
 # Define a pasta de trabalho lá na nuvem
 WORKDIR /app
 
-# Instala as ferramentas que o motor dlib precisa para compilar (o que faltava no seu Windows)
+# Instala as ferramentas que o motor dlib precisa para compilar
 RUN apt-get update && apt-get install -y \
     build-essential \
     cmake \
     && rm -rf /var/lib/apt/lists/*
+
+# ⚠️ O TRUQUE DE MESTRE DA NUVEM:
+# Força o servidor a usar apenas 1 núcleo para compilar, salvando a memória RAM (limita a ~1GB de uso)
+ENV MAKEFLAGS="-j1"
+ENV CMAKE_BUILD_PARALLEL_LEVEL=1
 
 # Copia e instala as bibliotecas do Python
 COPY requirements.txt .
