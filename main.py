@@ -1,8 +1,19 @@
 from fastapi import FastAPI, UploadFile, File
+from fastapi.middleware.cors import CORSMiddleware # <-- IMPORTANTE: Nova ferramenta
 import face_recognition
 import io
 
 app = FastAPI(title="API de Reconhecimento Facial")
+
+# <-- IMPORTANTE: O Leão de Chácara (CORS)
+# Isso avisa aos navegadores que qualquer site ("*") tem permissão para enviar fotos para cá.
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"], 
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 @app.post("/comparar_rostos/")
 async def comparar_rostos(
