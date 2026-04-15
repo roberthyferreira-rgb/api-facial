@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 import face_recognition
 import io
 
-app = FastAPI(title="API de Reconhecimento Facial Pro")
+app = FastAPI(title="API de Reconhecimento Facial Turbo")
 
 app.add_middleware(
     CORSMiddleware,
@@ -25,26 +25,28 @@ async def comparar_rostos(
         oficial_img = face_recognition.load_image_file(io.BytesIO(oficial_bytes))
         suspeita_img = face_recognition.load_image_file(io.BytesIO(suspeita_bytes))
 
-        # MELHORIA 1: Adicionamos num_jitters=1 para maior precisão no encoding oficial
-        oficial_encodings = face_recognition.face_encodings(oficial_img, num_jitters=1)
-        
-        # MELHORIA 2: Usamos model="hog" (mais rápido) ou "cnn" (mais lento/preciso)
-        # E aumentamos o número de vezes para 'upsample' a imagem à procura de rostos
-        suspeita_encodings = face_recognition.face_encodings(suspeita_img, num_jitters=1)
+        # ⚠️ A MÁGICA ACONTECE AQUI:
+        # number_of_times_to_upsample=2 força a IA a dar "zoom" na imagem para achar rostos pequenos
+        locais_oficial = face_recognition.face_locations(oficial_img, number_of_times_to_upsample=2)
+        locais_suspeita = face_recognition.face_locations(suspeita_img, number_of_times_to_upsample=2)
+
+        # Agora passamos os locais encontrados para extrair a biometria
+        oficial_encodings = face_recognition.face_encodings(oficial_img, known_face_locations=locais_oficial, num_jitters=1)
+        suspeita_encodings = face_recognition.face_encodings(suspeita_img, known_face_locations=locais_suspeita, num_jitters=1)
 
         if not oficial_encodings:
-            return {"erro": "Nenhum rosto encontrado na foto OFICIAL. Tente uma foto mais clara."}
+            return {"erro": "Nenhum rosto encontrado na foto OFICIAL."}
         if not suspeita_encodings:
-            return {"alerta": "IA não detetou rostos na imagem suspeita. Tente uma imagem com rosto mais visível."}
+            return {"alerta": "Ainda não consegui detetar rostos, mesmo com zoom máximo."}
 
         meu_encoding = oficial_encodings[0]
         rosto_encontrado = False
         
-        # MELHORIA 3: Ajuste de tolerância (0.5 é um ótimo equilíbrio entre rigor e flexibilidade)
-        distancias = face_recognition.face_distance(suspeita_encodings, meu_encoding)
-        
-        for distancia in distancias:
-            if distancia <= 0.55: # Se a distância for pequena, os rostos são iguais
+        # Compara com todos os rostos encontrados na foto suspeita
+        for rosto_desconhecido in suspeita_encodings:
+            # Tolerância de 0.55 (mais rigoroso para evitar falsos positivos)
+            resultado = face_recognition.compare_faces([meu_encoding], rosto_desconhecido, tolerance=0.55)
+            if resultado[0]:
                 rosto_encontrado = True
                 break
 
