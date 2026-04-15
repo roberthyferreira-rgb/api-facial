@@ -25,11 +25,9 @@ async def comparar_rostos(
         oficial_img = face_recognition.load_image_file(io.BytesIO(oficial_bytes))
         suspeita_img = face_recognition.load_image_file(io.BytesIO(suspeita_bytes))
 
-        # ⚠️ A MÁGICA ACONTECE AQUI:
-        # number_of_times_to_upsample=2 força a IA a dar "zoom" na imagem para achar rostos pequenos
-        locais_oficial = face_recognition.face_locations(oficial_img, number_of_times_to_upsample=2)
-        locais_suspeita = face_recognition.face_locations(suspeita_img, number_of_times_to_upsample=2)
-
+       # Trocando de 2 para 1 para salvar a memória RAM do servidor gratuito
+        locais_oficial = face_recognition.face_locations(oficial_img, number_of_times_to_upsample=1)
+        locais_suspeita = face_recognition.face_locations(suspeita_img, number_of_times_to_upsample=1)
         # Agora passamos os locais encontrados para extrair a biometria
         oficial_encodings = face_recognition.face_encodings(oficial_img, known_face_locations=locais_oficial, num_jitters=1)
         suspeita_encodings = face_recognition.face_encodings(suspeita_img, known_face_locations=locais_suspeita, num_jitters=1)
