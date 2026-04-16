@@ -1,11 +1,12 @@
 from fastapi import FastAPI, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
-from duckduckgo_search import DDGS
+from googleapiclient.discovery import build
 import face_recognition
 import requests
 import io
+import os
 
-app = FastAPI(title="API de Reconhecimento Facial + Investigador")
+app = FastAPI(title="Caçador Facial Profissional")
 
 app.add_middleware(
     CORSMiddleware,
@@ -15,121 +16,68 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# ---------------------------------------------------------
-# ROTA 1: A comparação manual que já fizemos (Para o App)
-# ---------------------------------------------------------
-@app.post("/comparar_rostos/")
-async def comparar_rostos(
-    foto_oficial: UploadFile = File(...), 
-    foto_suspeita: UploadFile = File(...)
-):
-    try:
-        oficial_bytes = await foto_oficial.read()
-        suspeita_bytes = await foto_suspeita.read()
+# 🛠️ CONFIGURAÇÃO DE SEGURANÇA
+# No Render, você vai cadastrar essas duas variáveis nas configurações (Environment Variables)
+GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
+GOOGLE_CX = os.getenv("GOOGLE_CX")
 
-        oficial_img = face_recognition.load_image_file(io.BytesIO(oficial_bytes))
-        suspeita_img = face_recognition.load_image_file(io.BytesIO(suspeita_bytes))
-
-        locais_oficial = face_recognition.face_locations(oficial_img, number_of_times_to_upsample=1)
-        locais_suspeita = face_recognition.face_locations(suspeita_img, number_of_times_to_upsample=1)
-
-        oficial_encodings = face_recognition.face_encodings(oficial_img, known_face_locations=locais_oficial, num_jitters=1)
-        suspeita_encodings = face_recognition.face_encodings(suspeita_img, known_face_locations=locais_suspeita, num_jitters=1)
-
-        if not oficial_encodings:
-            return {"erro": "Nenhum rosto encontrado na foto OFICIAL."}
-        if not suspeita_encodings:
-            return {"alerta": "Nenhum rosto detectado na foto suspeita."}
-
-        meu_encoding = oficial_encodings[0]
-        rosto_encontrado = False
-        
-        for rosto_desconhecido in suspeita_encodings:
-            resultado = face_recognition.compare_faces([meu_encoding], rosto_desconhecido, tolerance=0.55)
-            if resultado[0]:
-                rosto_encontrado = True
-                break
-
-        if rosto_encontrado:
-            return {"status": "alerta", "mensagem": "⚠️ ALERTA: Esta foto contém o seu rosto!"}
-        else:
-            return {"status": "limpo", "mensagem": "✅ Tudo limpo: Não é você nesta imagem."}
-
-    except Exception as e:
-        return {"erro": f"Erro técnico: {str(e)}"}
-
-
-# ---------------------------------------------------------
-# ROTA 2: O Novo Modo Caçador Automático
-# ---------------------------------------------------------
 @app.post("/cacar_na_internet/")
 async def cacar_na_internet(
     termo_busca: str = Form(...),
     foto_oficial: UploadFile = File(...)
 ):
     try:
-        # 1. Lê e memoriza o rosto oficial
+        # 1. Processa o seu rosto oficial
         oficial_bytes = await foto_oficial.read()
         oficial_img = face_recognition.load_image_file(io.BytesIO(oficial_bytes))
-        locais_oficial = face_recognition.face_locations(oficial_img, number_of_times_to_upsample=1)
-        oficial_encodings = face_recognition.face_encodings(oficial_img, known_face_locations=locais_oficial, num_jitters=1)
+        oficial_encodings = face_recognition.face_encodings(oficial_img, num_jitters=1)
 
         if not oficial_encodings:
-            return {"erro": "Nenhum rosto encontrado na foto OFICIAL."}
-
+            return {"erro": "Rosto não detectado na foto oficial."}
+        
         meu_encoding = oficial_encodings[0]
-        
-        # 2. Faz a varredura no DuckDuckGo
-        resultados_positivos = []
-        fotos_analisadas = 0
-        
-        # Limitamos a 5 resultados para não estourar a memória da Render gratuita
-        with DDGS() as ddgs:
-            resultados_busca = list(ddgs.images(termo_busca, max_results=5))
 
-        # Disfarce para sites não bloquearem o download do nosso servidor
-        headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
+        # 2. Busca no Google Imagens usando a API Oficial
+        service = build("customsearch", "v1", developerKey=GOOGLE_API_KEY)
+        res = service.cse().list(
+            q=termo_busca,
+            cx=GOOGLE_CX,
+            searchType="image",
+            num=10  # Vamos buscar as 10 primeiras imagens
+        ).execute()
 
-        # 3. Baixa e analisa cada foto encontrada
-        for img_data in resultados_busca:
-            url_imagem = img_data.get('image')
-            if not url_imagem: 
-                continue
-            
-            try:
-                # Tenta baixar a imagem (com limite de 5 segundos de espera)
-                resposta = requests.get(url_imagem, headers=headers, timeout=5)
-                if resposta.status_code == 200:
-                    fotos_analisadas += 1
-                    
-                    suspeita_img = face_recognition.load_image_file(io.BytesIO(resposta.content))
-                    locais_suspeita = face_recognition.face_locations(suspeita_img, number_of_times_to_upsample=1)
-                    suspeita_encodings = face_recognition.face_encodings(suspeita_img, known_face_locations=locais_suspeita)
-                    
-                    # Compara com a foto da internet
-                    for rosto_desconhecido in suspeita_encodings:
-                        resultado = face_recognition.compare_faces([meu_encoding], rosto_desconhecido, tolerance=0.55)
-                        if resultado[0]:
-                            resultados_positivos.append(url_imagem) # Salva o link da foto!
-                            break
-            except Exception:
-                continue # Se a foto for bloqueada ou o link estiver quebrado, pula pra próxima
+        links_encontrados = []
         
-        # 4. Devolve o relatório final
-        if len(resultados_positivos) > 0:
+        # 3. Analisa as imagens retornadas pelo Google
+        if "items" in res:
+            for item in res["items"]:
+                url_img = item["link"]
+                try:
+                    # Baixa a imagem da internet
+                    resp = requests.get(url_img, timeout=5)
+                    if resp.status_code == 200:
+                        img_internet = face_recognition.load_image_file(io.BytesIO(resp.content))
+                        encodings_internet = face_recognition.face_encodings(img_internet)
+
+                        # Compara a biometria
+                        for encoding_suspeito in encodings_internet:
+                            # Tolerância de 0.55 (Equilíbrio entre rigor e detecção)
+                            match = face_recognition.compare_faces([meu_encoding], encoding_suspeito, tolerance=0.55)
+                            if match[0]:
+                                links_encontrados.append(url_img)
+                                break
+                except:
+                    continue
+
+        # 4. Resultado Final
+        if links_encontrados:
             return {
                 "status": "alerta",
-                "mensagem": f"🚨 ALERTA! Rosto encontrado em {len(resultados_positivos)} foto(s).",
-                "fotos_analisadas": fotos_analisadas,
-                "links_encontrados": resultados_positivos
+                "mensagem": f"🚨 Encontrado em {len(links_encontrados)} sites!",
+                "links": links_encontrados
             }
-        else:
-            return {
-                "status": "limpo",
-                "mensagem": "✅ Tudo limpo. O buscador não encontrou o seu rosto.",
-                "fotos_analisadas": fotos_analisadas,
-                "links_encontrados": []
-            }
+        
+        return {"status": "limpo", "mensagem": "✅ Nenhuma correspondência oficial encontrada."}
 
     except Exception as e:
-        return {"erro": f"Erro na investigação: {str(e)}"}
+        return {"erro": f"Erro na busca Google: {str(e)}"}
