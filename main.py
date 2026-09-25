@@ -3,6 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import face_recognition
 import requests
+import pickle
 import io
 import os
 
@@ -16,27 +17,22 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Criamos um modelo para receber a lista de links da extensão
 class ListaFotos(BaseModel):
     urls: list[str]
 
-# 🧠 O CÉREBRO: Carrega suas fotos na memória quando o servidor liga
+# 🧠 O CÉREBRO OTIMIZADO: Carrega os bytes pré-calculados em milissegundos
 rostos_conhecidos = []
-pasta_fotos = "minhas_fotos"
+arquivo_mapa = "mapa_facial.dat"
 
-if os.path.exists(pasta_fotos):
-    print("Carregando rostos base...")
-    for nome_arquivo in os.listdir(pasta_fotos):
-        caminho = os.path.join(pasta_fotos, nome_arquivo)
-        try:
-            img = face_recognition.load_image_file(caminho)
-            encodings = face_recognition.face_encodings(img)
-            if encodings:
-                rostos_conhecidos.append(encodings[0])
-                print(f"Rosto de {nome_arquivo} carregado e memorizado!")
-        except Exception as e:
-            print(f"Erro ao ler {nome_arquivo}: {e}")
+if os.path.exists(arquivo_mapa):
+    print("Carregando mapa facial pré-calculado...")
+    with open(arquivo_mapa, "rb") as arquivo_dados:
+        rostos_conhecidos = pickle.load(arquivo_dados)
+    print(f"✅ Cérebro ativado com {len(rostos_conhecidos)} faces memorizadas!")
+else:
+    print("⚠️ Arquivo mapa_facial.dat não encontrado.")
 
+# ... (Mantenha o resto da sua rota @app.post("/analisar_facebook/") exatamente igual) ...
 @app.post("/analisar_facebook/")
 async def analisar_facebook(dados: ListaFotos):
     if not rostos_conhecidos:
