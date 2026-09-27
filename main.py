@@ -32,33 +32,29 @@ if os.path.exists(arquivo_mapa):
 else:
     print("⚠️ Arquivo mapa_facial.dat não encontrado.")
 
-# ... (Mantenha o resto da sua rota @app.post("/analisar_facebook/") exatamente igual) ...
 @app.post("/analisar_facebook/")
 async def analisar_facebook(dados: ListaFotos):
     if not rostos_conhecidos:
-        return {"erro": "Nenhum rosto base foi encontrado na pasta 'minhas_fotos'."}
+        return {"erro": "O mapa facial não foi carregado."}
 
     fotos_encontradas = []
 
     for url in dados.urls:
         try:
-            # 1. O Python baixa a foto do Facebook
             resp = requests.get(url, timeout=5)
             if resp.status_code == 200:
                 img_fb = face_recognition.load_image_file(io.BytesIO(resp.content))
                 encodings_fb = face_recognition.face_encodings(img_fb)
 
-                # 2. Verifica todos os rostos que estão na foto do Facebook
                 for encoding_suspeito in encodings_fb:
-                    # 3. Compara com os seus rostos memorizados
-                    # Tolerância de 0.55 (Ajuste conforme necessário)
+                    # Compara com os seus rostos memorizados (Tolerância de 0.55)
                     matches = face_recognition.compare_faces(rostos_conhecidos, encoding_suspeito, tolerance=0.55)
                     
                     if True in matches:
                         fotos_encontradas.append(url)
-                        break # Achou você! Pula para a próxima foto
+                        break
         except:
-            continue # Se a foto der erro, ignora e segue a vida
+            continue
 
     return {
         "status": "concluido",
